@@ -12,32 +12,37 @@ st.set_page_config(page_title="Päivystysvahti", layout="wide", page_icon="✈�
 # --- CSS: ULKOASU JA TÄSMÄLLINEN LINJAUS ---
 st.markdown("""
     <style>
-    /* Nostettu paddingia, jotta otsikot eivät jää yläpalkin alle */
-    .block-container { 
-        padding-top: 4.5rem !important; 
-    }
-    
+    .block-container { padding-top: 2.5rem !important; }
     [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
     hr { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
     
-    .label-text { 
-        font-size: 14px; 
-        font-weight: bold; 
-        margin-bottom: 5px; 
-        color: #eee; 
-    }
+    .main-title { font-size: 2.2rem; font-weight: 800; margin-bottom: 0px; color: #ffffff; }
+    .sub-title { font-size: 0.9rem; color: #888; margin-bottom: 20px; font-style: italic; }
     
+    .label-text { font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #eee; }
     .info-label { color: #aaa; font-size: 12px; }
     
-    /* Täsmällinen napin linjaus muiden kenttien kanssa */
-    div[data-testid="stButton"] {
-        margin-top: 21px !important;
+    /* Alaviitteen tyyli */
+    .footer { 
+        position: fixed; 
+        left: 0; 
+        bottom: 0; 
+        width: 100%; 
+        background-color: transparent; 
+        color: #555; 
+        text-align: center; 
+        font-size: 10px;
+        padding: 10px;
     }
-    
-    /* Piilotetaan vakio-latauspalkki */
+
+    div[data-testid="stButton"] { margin-top: 21px !important; }
     div[data-testid="stStatusWidget"] { visibility: hidden; }
     </style>
     """, unsafe_allow_html=True)
+
+# --- OTSAKKEET ---
+st.markdown('<p class="main-title">Emppukuskin päivystysvahti ✈️</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">(Yöpyvien vahti toimii luotettavasti vain iltapäivystyksessä)</p>', unsafe_allow_html=True)
 
 # --- SYÖTTEET ---
 col_ui = st.columns([1.5, 1, 1.2, 0.5])
@@ -55,8 +60,7 @@ nykyhetki = datetime.now()
 paivystys_loppu_dt = datetime.combine(nykyhetki.date(), paattymisaika)
 
 if tarkista:
-    # --- ILMAILUHENKINEN LATAUSINDIKAATTORI ---
-    progress_text = "Valmistellaan nousua..."
+    progress_text = "Yhdistetään tutkaan..."
     my_bar = st.progress(0, text=progress_text)
     
     headers = {
@@ -67,15 +71,10 @@ if tarkista:
     ts = int(nykyhetki.timestamp())
 
     try:
-        # Simuloidaan etenemistä lentokoneella
         for percent_complete in range(100):
-            time.sleep(0.005)
-            if percent_complete == 30:
-                progress_text = "Otetaan yhteyttä lennonjohtoon... 📡"
-            if percent_complete == 60:
-                progress_text = "Haetaan reittitietoja... ✈️"
-            if percent_complete == 90:
-                progress_text = "Laskeudutaan kohteeseen... 🛬"
+            time.sleep(0.003)
+            if percent_complete == 40: progress_text = "Haetaan Helsinki-Vantaan liikennettä... 📡"
+            if percent_complete == 80: progress_text = "Suodatetaan kalustoa... ✈️"
             my_bar.progress(percent_complete + 1, text=progress_text)
 
         # Haut
@@ -155,3 +154,6 @@ if tarkista:
 
     except Exception as e:
         st.error(f"Virhe: {e}")
+
+# --- FOOTER ---
+st.markdown('<div class="footer">Data sourced via Flightradar24 JSON API • Emppukuskin työkalu</div>', unsafe_allow_html=True)
