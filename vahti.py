@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import time
 import base64
 
-# --- FUNKTIO: Ladataan ikoni paikallisesta tiedostosta ja muunnetaan base64-muotoon ---
+# --- FUNKTIO: Ladataan ikoni ja luodaan siitä base64-merkkijono ---
 def get_base64_icon():
     try:
         with open("ikoni.png", "rb") as image_file:
@@ -13,55 +13,59 @@ def get_base64_icon():
     except FileNotFoundError:
         return None
 
-icon_base64 = get_base64_icon()
-
-# --- ASETUKSET ---
-# Tähän listataan ne rekisteritunnukset, joita sovellus seuraa
-REKKARIT_RAAKA = "EFGHIKLMNOPR"
-REKKARIT = [f"OH-LK{l}" for l in REKKARIT_RAAKA]
-IATA_HEL = "HEL"
+# Luodaan uniikki aikaleima pakottamaan selaimen välimuistin päivitys
+version_tag = int(time.time())
+icon_data = get_base64_icon()
 
 # --- SIVUN KONFIGURAATIO ---
-# TÄSSÄ VAIHDETAAN SELAIMEN FAVICON OMAAN IKONIIN
 st.set_page_config(
     page_title="Päivystysvahti",
     layout="wide",
-    page_icon=icon_base64 if icon_base64 else "✈️" # Jos ikonia ei löydy, käytetään emojia
+    page_icon=icon_data if icon_data else "✈️"
 )
 
-# --- HTML-KIKKA: Lisätään apple-touch-icon sivun <head>-osaan ---
-if icon_base64:
+# --- HTML/META-KIKAT IPADIA VARTEN ---
+if icon_data:
     st.markdown(f'''
-        <link rel="apple-touch-icon" href="{icon_base64}">
-        ''', unsafe_allow_html=True)
+        <style>
+            /* Piilotetaan Streamlitin yläpalkki ja brändäys heti alussa */
+            #MainMenu {{visibility: hidden;}}
+            footer {{visibility: hidden;}}
+            header {{visibility: hidden;}}
+            .stDeployButton {{display:none;}}
+        </style>
+        
+        <!-- Apple Touch Icon iPadin kotinäyttöä varten -->
+        <link rel="apple-touch-icon" href="{icon_data}?v={version_tag}">
+        <link rel="apple-touch-icon-precomposed" href="{icon_data}?v={version_tag}">
+        
+        <!-- Favicon-linkit selaimen välilehdelle -->
+        <link rel="icon" type="image/png" href="{icon_data}?v={version_tag}">
+        <link rel="shortcut icon" href="{icon_data}?v={version_tag}">
+        
+        <!-- Kerrotaan iPadille, että tämä on web-appi -->
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <meta name="apple-mobile-web-app-title" content="Päivystysvahti">
+    ''', unsafe_allow_html=True)
 
-# --- CSS: ULKOASU, TÄSMÄLLINEN LINJAUS JA BRANDINGIN PIILOTUS ---
+# --- CSS-MUOTOILU ---
 st.markdown("""
     <style>
-    /* 1. PIILOTETAAN STREAMLITIN OMA LOGO JA VALIKOT */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    [data-testid="stStatusWidget"] {visibility: hidden;}
-    /* Poistetaan myös se lataus-spinneeri */
-    .stDeployButton {visibility: hidden;}
-
-    /* 2. MUU ULKOASU */
     .block-container { 
-        padding-top: 5.5rem !important; 
+        padding-top: 4.5rem !important; 
     }
-    
     [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
     hr { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
     
     .main-title { 
         font-size: 2.2rem; 
         font-weight: 800; 
-        margin-top: 10px;
+        margin-top: 0px;
         margin-bottom: 0px; 
         color: #ffffff; 
     }
     .sub-title { font-size: 0.9rem; color: #888; margin-bottom: 25px; font-style: italic; }
-    
     .label-text { font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #eee; }
     .info-label { color: #aaa; font-size: 12px; }
     
@@ -70,22 +74,25 @@ st.markdown("""
         left: 0; 
         bottom: 0; 
         width: 100%; 
-        background-color: transparent; 
         color: #444; 
         text-align: center; 
         font-size: 10px;
         padding: 10px;
     }
-
     div[data-testid="stButton"] { margin-top: 21px !important; }
     </style>
     """, unsafe_allow_html=True)
+
+# --- ASETUKSET ---
+REKKARIT_RAAKA = "EFGHIKLMNOPR"
+REKKARIT = [f"OH-LK{l}" for l in REKKARIT_RAAKA]
+IATA_HEL = "HEL"
 
 # --- OTSAKKEET ---
 st.markdown('<p class="main-title">Emppukuskin päivystysvahti ✈️</p>', unsafe_allow_html=True)
 st.markdown('<p class="sub-title">(Yöpyvien vahti toimii luotettavasti vain iltapäivystyksessä)</p>', unsafe_allow_html=True)
 
-# --- KÄYTTÖLIITTYMÄ / SYÖTTEET ---
+# --- SYÖTTEET ---
 col_ui = st.columns([1.5, 1, 1.2, 0.5])
 
 with col_ui[0]:
@@ -97,7 +104,6 @@ with col_ui[1]:
 with col_ui[2]:
     tarkista = st.button('HAE LENTOJA 🔍', use_container_width=True, type="primary")
 
-# --- LENTODATAN HAKU JA KÄSITTELY ---
 nykyhetki = datetime.now()
 paivystys_loppu_dt = datetime.combine(nykyhetki.date(), paattymisaika)
 
@@ -113,9 +119,8 @@ if tarkista:
     ts = int(nykyhetki.timestamp())
 
     try:
-        # Pieni animaatio latauspalkille
         for percent_complete in range(100):
-            time.sleep(0.003)
+            time.sleep(0.002)
             if percent_complete == 40: progress_text = "Päivitetään Helsinki-Vantaan tilannetta... 📡"
             my_bar.progress(percent_complete + 1, text=progress_text)
 
@@ -172,7 +177,6 @@ if tarkista:
 
         my_bar.empty()
 
-        # --- TULOSTUS ---
         if loydetyt:
             for k in sorted(loydetyt, key=lambda x: x['ilmo']):
                 c1, c2, c3 = st.columns([1, 2.5, 2.5])
@@ -181,11 +185,10 @@ if tarkista:
                 with c2:
                     paluu_str = f"{k['paluu'].strftime('%H:%M')}" if k['paluu'] else "🌙 Yöpyvä"
                     st.markdown(f"**{k['lento']}** ➡️ **{k['kohde']}**")
-                    st.markdown(f"<span class='info-label'>Lähtöaika:</span> **{k['lahto'].strftime('%H:%M')}** \n"
-                                f"<span class='info-label'>Saapuminen:</span> **{paluu_str}**", unsafe_allow_html=True)
+                    st.markdown(f"<span class='info-label'>Lähtö:</span> **{k['lahto'].strftime('%H:%M')}** | <span class='info-label'>Paluu:</span> **{paluu_str}**", unsafe_allow_html=True)
                 with c3:
                     color = "#00ff00" if k['soitto_min'] > 30 else "#ff4b4b"
-                    st.markdown(f"<div style='text-align:right;'><span style='color:{color}; font-size: 0.85rem;'>Soittoaikaa jäljellä:</span><br><b style='font-size: 1.3rem; color:{color};'>{k['soitto_min']} min</b></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='text-align:right;'><span style='color:{color}; font-size: 0.8rem;'>Soittoaikaa:</span><br><b style='font-size: 1.4rem; color:{color};'>{k['soitto_min']} min</b></div>", unsafe_allow_html=True)
                 st.divider()
         else:
             st.info("Ei aktiivisia keikkoja.")
@@ -195,7 +198,6 @@ if tarkista:
                 st.caption(f"{o['lahto'].strftime('%H:%M')} | {o['reg']} | {o['lento']} ➡️ {o['kohde']} | {o['syy']}")
 
     except Exception as e:
-        st.error(f"Virhe: {e}")
+        st.error(f"Virhe datan hakemisessa: {e}")
 
-# --- FOOTER ---
-st.markdown('<div class="footer">Data: Flightradar24 API • Emppukuskin työkalu</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Emppukuskin työkalu • Flightradar24 API</div>', unsafe_allow_html=True)
