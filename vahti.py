@@ -12,12 +12,23 @@ st.set_page_config(page_title="Päivystysvahti", layout="wide", page_icon="✈�
 # --- CSS: ULKOASU JA TÄSMÄLLINEN LINJAUS ---
 st.markdown("""
     <style>
-    .block-container { padding-top: 2.5rem !important; }
+    /* Nostettu koko sisältöä reilusti, jotta otsikko näkyy */
+    .block-container { 
+        padding-top: 5.5rem !important; 
+    }
+    
     [data-testid="stVerticalBlock"] { gap: 0.4rem !important; }
     hr { margin-top: 0.2rem !important; margin-bottom: 0.2rem !important; }
     
-    .main-title { font-size: 2.2rem; font-weight: 800; margin-bottom: 0px; color: #ffffff; }
-    .sub-title { font-size: 0.9rem; color: #888; margin-bottom: 20px; font-style: italic; }
+    /* Otsikon sijoittelu */
+    .main-title { 
+        font-size: 2.2rem; 
+        font-weight: 800; 
+        margin-top: 10px;
+        margin-bottom: 0px; 
+        color: #ffffff; 
+    }
+    .sub-title { font-size: 0.9rem; color: #888; margin-bottom: 25px; font-style: italic; }
     
     .label-text { font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #eee; }
     .info-label { color: #aaa; font-size: 12px; }
@@ -29,7 +40,7 @@ st.markdown("""
         bottom: 0; 
         width: 100%; 
         background-color: transparent; 
-        color: #555; 
+        color: #444; 
         text-align: center; 
         font-size: 10px;
         padding: 10px;
@@ -73,8 +84,7 @@ if tarkista:
     try:
         for percent_complete in range(100):
             time.sleep(0.003)
-            if percent_complete == 40: progress_text = "Haetaan Helsinki-Vantaan liikennettä... 📡"
-            if percent_complete == 80: progress_text = "Suodatetaan kalustoa... ✈️"
+            if percent_complete == 40: progress_text = "Päivitetään Helsinki-Vantaan tilannetta... 📡"
             my_bar.progress(percent_complete + 1, text=progress_text)
 
         # Haut
@@ -150,10 +160,11 @@ if tarkista:
 
         with st.expander("Muut havainnot"):
             for o in sorted(ohitetut, key=lambda x: x['lahto']):
-                st.caption(f"{o['lahto'].strftime('%H:%M')} | {o['reg']} | {o['lento']} | {o['syy']}")
+                # Lisätty kohdekenttä myös ohitettuihin
+                st.caption(f"{o['lahto'].strftime('%H:%M')} | {o['reg']} | {o['lento']} ➡️ {o['kohde']} | {o['syy']}")
 
     except Exception as e:
         st.error(f"Virhe: {e}")
 
 # --- FOOTER ---
-st.markdown('<div class="footer">Data sourced via Flightradar24 JSON API • Emppukuskin työkalu</div>', unsafe_allow_html=True)
+st.markdown('<div class="footer">Data: Flightradar24 API • Emppukuskin työkalu</div>', unsafe_allow_html=True)
