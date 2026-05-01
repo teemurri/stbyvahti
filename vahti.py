@@ -1,12 +1,13 @@
 import streamlit as st
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import base64
-import pytz  # Aikavyöhykemuunnoksia varten
+from zoneinfo import ZoneInfo # Python 3.9+ sisäänrakennettu aikavyöhyketuki
 
 # --- KONFIGURAATIO ---
-LOCAL_TZ = pytz.timezone("Europe/Helsinki")
+# Käytetään ZoneInfoa pytzin sijasta
+LOCAL_TZ = ZoneInfo("Europe/Helsinki")
 
 # --- FUNKTIO: Ladataan ikoni ---
 def get_base64_icon():
@@ -51,7 +52,6 @@ st.markdown("""
     .info-label { color: #aaa; font-size: 12px; }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; color: #444; text-align: center; font-size: 10px; padding: 10px; }
     div[data-testid="stButton"] { margin-top: 21px !important; }
-    /* Huomautusteksti syötteen alla */
     .input-hint { font-size: 11px; color: #ff4b4b; margin-top: -10px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
@@ -78,9 +78,10 @@ with col_ui[1]:
 with col_ui[2]:
     tarkista = st.button('HAE LENTOJA 🔍', use_container_width=True, type="primary")
 
-# Aika-asetukset hakuun
+# Nykyhetki paikallisessa ajassa vertailua varten
 nykyhetki_paikallinen = datetime.now(LOCAL_TZ)
-paivystys_loppu_dt = LOCAL_TZ.localize(datetime.combine(nykyhetki_paikallinen.date(), paattymisaika))
+# Muutetaan käyttäjän syöttämä kellonaika täydeksi datetime-olioksi paikallisella vyöhykkeellä
+paivystys_loppu_dt = datetime.combine(nykyhetki_paikallinen.date(), paattymisaika).replace(tzinfo=LOCAL_TZ)
 
 if tarkista:
     my_bar = st.progress(0, text="Yhdistetään tutkaan...")
@@ -108,9 +109,8 @@ if tarkista:
                 dep_ts = f.get('time', {}).get('scheduled', {}).get('departure')
                 if not dep_ts: continue
                 
-                # MUUNNOS: UTC -> Paikallinen aika (LT)
-                lahto_dt_utc = datetime.fromtimestamp(dep_ts, tz=pytz.UTC)
-                lahto_dt_lt = lahto_dt_utc.astimezone(LOCAL_TZ)
+                # MUUNNOS: UTC timestamp -> Paikallinen aika (LT)
+                lahto_dt_lt = datetime.fromtimestamp(dep_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                 
                 ilmo_dt_lt = lahto_dt_lt - timedelta(minutes=50)
                 min_lahtoon = int((lahto_dt_lt - nykyhetki_paikallinen).total_seconds() / 60)
@@ -121,8 +121,9 @@ if tarkista:
                     af = arr_item.get('flight', {})
                     if af.get('aircraft', {}).get('registration') == reg:
                         arr_ts = af.get('time', {}).get('scheduled', {}).get('arrival')
+                        # Katsotaan paluuta 7h ikkunassa
                         if arr_ts and dep_ts < arr_ts <= (dep_ts + 25200):
-                            paluu_aika_lt = datetime.fromtimestamp(arr_ts, tz=pytz.UTC).astimezone(LOCAL_TZ)
+                            paluu_aika_lt = datetime.fromtimestamp(arr_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                             break
                 
                 on_yopyva = (paluu_aika_lt is None) and (kohde != "KEF")
@@ -133,6 +134,7 @@ if tarkista:
                     "paluu": paluu_aika_lt, "yopyva": on_yopyva
                 }
 
+                # Tarkistetaan onko ilmoittautuminen ennen päivystyksen loppua (paikallisessa ajassa)
                 if min_lahtoon >= 140 and ilmo_dt_lt <= paivystys_loppu_dt:
                     if paivystys_tyyppi == "1 pv" and info["yopyva"]:
                         info["syy"] = "Yöpyvä"
