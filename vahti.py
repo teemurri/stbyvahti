@@ -134,6 +134,7 @@ if tarkista:
                             paluu_aika_lt = datetime.fromtimestamp(arr_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                             break
                 
+                # KEF on poikkeus: se ei ole ikinä yöpyvä tässä logiikassa
                 on_yopyva = (paluu_aika_lt is None) and (kohde != "KEF")
                 
                 info = {
@@ -160,7 +161,7 @@ if tarkista:
                 with c1:
                     st.markdown(f"### {k['reg']}")
                 with c2:
-                    paluu_str = k['paluu'].strftime('%H:%M') if k['paluu'] else ("⌛ Pitkä kääntö" if k['kohde'] == "KEF" else "🌙 Yöpyvä")
+                    paluu_str = k['paluu'].strftime('%H:%M') if k['paluu'] else "🌙 Yöpyvä"
                     st.markdown(f"**{k['lento']}** ➡️ **{k['kohde']}**")
                     st.markdown(f"<span class='info-label'>Lähtö (LT):</span> **{k['lahto'].strftime('%H:%M')}** | <span class='info-label'>Paluu (LT):</span> **{paluu_str}**", unsafe_allow_html=True)
                 with c3:
