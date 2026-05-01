@@ -161,7 +161,14 @@ if tarkista:
                 with c1:
                     st.markdown(f"### {k['reg']}")
                 with c2:
-                    paluu_str = k['paluu'].strftime('%H:%M') if k['paluu'] else "🌙 Yöpyvä"
+                    # Määritetään paluuaika-teksti
+                    if k['paluu']:
+                        paluu_str = k['paluu'].strftime('%H:%M')
+                    elif k['kohde'] == "KEF":
+                        paluu_str = "—" # Jos KEF ja paluuta ei löydy, näytetään viiva "yöpyvän" sijasta
+                    else:
+                        paluu_str = "🌙 Yöpyvä"
+                        
                     st.markdown(f"**{k['lento']}** ➡️ **{k['kohde']}**")
                     st.markdown(f"<span class='info-label'>Lähtö (LT):</span> **{k['lahto'].strftime('%H:%M')}** | <span class='info-label'>Paluu (LT):</span> **{paluu_str}**", unsafe_allow_html=True)
                 with c3:
