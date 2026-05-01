@@ -3,10 +3,9 @@ import requests
 from datetime import datetime, timedelta, timezone
 import time
 import base64
-from zoneinfo import ZoneInfo # Python 3.9+ sisäänrakennettu aikavyöhyketuki
+from zoneinfo import ZoneInfo
 
 # --- KONFIGURAATIO ---
-# Käytetään ZoneInfoa pytzin sijasta
 LOCAL_TZ = ZoneInfo("Europe/Helsinki")
 
 # --- FUNKTIO: Ladataan ikoni ---
@@ -52,7 +51,6 @@ st.markdown("""
     .info-label { color: #aaa; font-size: 12px; }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; color: #444; text-align: center; font-size: 10px; padding: 10px; }
     div[data-testid="stButton"] { margin-top: 21px !important; }
-    .input-hint { font-size: 11px; color: #ff4b4b; margin-top: -10px; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -74,29 +72,42 @@ with col_ui[0]:
 with col_ui[1]:
     st.markdown('<p class="label-text">Päivystys päättyy (LT)</p>', unsafe_allow_html=True)
     paattymisaika = st.time_input("Päättyy", value=datetime.strptime("20:00", "%H:%M").time(), label_visibility="collapsed")
-    st.markdown('<p class="input-hint">Anna aika Suomen ajassa</p>', unsafe_allow_html=True)
 with col_ui[2]:
     tarkista = st.button('HAE LENTOJA 🔍', use_container_width=True, type="primary")
 
-# Nykyhetki paikallisessa ajassa vertailua varten
 nykyhetki_paikallinen = datetime.now(LOCAL_TZ)
-# Muutetaan käyttäjän syöttämä kellonaika täydeksi datetime-olioksi paikallisella vyöhykkeellä
 paivystys_loppu_dt = datetime.combine(nykyhetki_paikallinen.date(), paattymisaika).replace(tzinfo=LOCAL_TZ)
 
 if tarkista:
     my_bar = st.progress(0, text="Yhdistetään tutkaan...")
     
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json", "Referer": "https://www.flightradar24.com/"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Referer": "https://www.flightradar24.com/"
+    }
     ts = int(time.time())
 
     try:
         my_bar.progress(25, text="Haetaan lähtöjä...")
-        dep_res = requests.get(f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=departures&plugin-setting[schedule][timestamp]={ts}", headers=headers, timeout=10)
-        my_bar.progress(50, text="Haetaan saapuvia...")
-        arr_res = requests.get(f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=arrivals&plugin-setting[schedule][timestamp]={ts}", headers=headers, timeout=10)
+        dep_res = requests.get(f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=departures&plugin-setting[schedule][timestamp]={ts}", headers=headers, timeout=15)
         
-        departures = dep_res.json().get('result', {}).get('response', {}).get('airport', {}).get('pluginData', {}).get('schedule', {}).get('departures', {}).get('data', [])
-        arrivals = arr_res.json().get('result', {}).get('response', {}).get('airport', {}).get('pluginData', {}).get('schedule', {}).get('arrivals', {}).get('data', [])
+        if dep_res.status_code != 200:
+            st.error(f"Lähtöjen haku epäonnistui (Status: {dep_res.status_code}). Yritä hetken kuluttua uudelleen.")
+            st.stop()
+
+        my_bar.progress(50, text="Haetaan saapuvia...")
+        arr_res = requests.get(f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=arrivals&plugin-setting[schedule][timestamp]={ts}", headers=headers, timeout=15)
+        
+        if arr_res.status_code != 200:
+            st.error(f"Saapuvien haku epäonnistui (Status: {arr_res.status_code}).")
+            st.stop()
+            
+        departures_data = dep_res.json()
+        arrivals_data = arr_res.json()
+
+        departures = departures_data.get('result', {}).get('response', {}).get('airport', {}).get('pluginData', {}).get('schedule', {}).get('departures', {}).get('data', [])
+        arrivals = arrivals_data.get('result', {}).get('response', {}).get('airport', {}).get('pluginData', {}).get('schedule', {}).get('arrivals', {}).get('data', [])
 
         loydetyt = []
         ohitetut = []
@@ -109,9 +120,7 @@ if tarkista:
                 dep_ts = f.get('time', {}).get('scheduled', {}).get('departure')
                 if not dep_ts: continue
                 
-                # MUUNNOS: UTC timestamp -> Paikallinen aika (LT)
                 lahto_dt_lt = datetime.fromtimestamp(dep_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
-                
                 ilmo_dt_lt = lahto_dt_lt - timedelta(minutes=50)
                 min_lahtoon = int((lahto_dt_lt - nykyhetki_paikallinen).total_seconds() / 60)
                 kohde = f.get('airport', {}).get('destination', {}).get('code', {}).get('iata', '???')
@@ -121,7 +130,6 @@ if tarkista:
                     af = arr_item.get('flight', {})
                     if af.get('aircraft', {}).get('registration') == reg:
                         arr_ts = af.get('time', {}).get('scheduled', {}).get('arrival')
-                        # Katsotaan paluuta 7h ikkunassa
                         if arr_ts and dep_ts < arr_ts <= (dep_ts + 25200):
                             paluu_aika_lt = datetime.fromtimestamp(arr_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                             break
@@ -134,7 +142,6 @@ if tarkista:
                     "paluu": paluu_aika_lt, "yopyva": on_yopyva
                 }
 
-                # Tarkistetaan onko ilmoittautuminen ennen päivystyksen loppua (paikallisessa ajassa)
                 if min_lahtoon >= 140 and ilmo_dt_lt <= paivystys_loppu_dt:
                     if paivystys_tyyppi == "1 pv" and info["yopyva"]:
                         info["syy"] = "Yöpyvä"
