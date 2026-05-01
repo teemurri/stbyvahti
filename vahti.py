@@ -58,7 +58,7 @@ st.markdown("""
 REKKARIT_RAAKA = "EFGHIKLMNOPR"
 REKKARIT = [f"OH-LK{l}" for l in REKKARIT_RAAKA]
 IATA_HEL = "HEL"
-PITKAT_KEIKAT = ["KEF", "MAN", "DUS"] # Kohteet, jotka eivät ole yöpyviä
+PITKAT_KEIKAT = ["KEF", "MAN", "DUS", "WAW"] # Kohteet, jotka eivät ole yöpyviä
 
 # --- OTSAKKEET ---
 st.markdown('<p class="main-title">Emppukuskin päivystysvahti ✈️</p>', unsafe_allow_html=True)
@@ -131,12 +131,12 @@ if tarkista:
                     af = arr_item.get('flight', {})
                     if af.get('aircraft', {}).get('registration') == reg:
                         arr_ts = af.get('time', {}).get('scheduled', {}).get('arrival')
-                        # Haetaan paluuta 7 tunnin ikkunassa lähdöstä
-                        if arr_ts and dep_ts < arr_ts <= (dep_ts + 25200):
+                        # POHDINTA: Nostettu ikkuna 12 tuntiin (43200 sek), jotta pitkät kierrot löytyvät
+                        if arr_ts and dep_ts < arr_ts <= (dep_ts + 43200):
                             paluu_aika_lt = datetime.fromtimestamp(arr_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                             break
                 
-                # Kohde ei ole yöpyvä, jos se on listalla tai sille löytyy paluu
+                # Yöpyvä vain, jos paluuta ei löydy 12h sisään EIKÄ kohde ole erikoislistalla
                 on_yopyva = (paluu_aika_lt is None) and (kohde not in PITKAT_KEIKAT)
                 
                 info = {
