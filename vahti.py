@@ -32,12 +32,17 @@ st.markdown("""
     .main-title { font-size: 2.2rem; font-weight: 800; margin-bottom: 0px; color: #ffffff; }
     .label-text { font-size: 14px; font-weight: bold; margin-bottom: 5px; color: #eee; }
     .info-label { color: #aaa; font-size: 12px; }
-    .footer { position: fixed; left: 0; bottom: 0; width: 100%; color: #444; text-align: center; font-size: 10px; padding: 10px; }
-    
-    /* Korjataan nappien korkeus suhteessa tekstikenttiin */
-    div[data-testid="stButton"] { 
-        margin-top: 28px !important; 
+    .status-box { 
+        background-color: #1e1e1e; 
+        padding: 10px; 
+        border-radius: 5px; 
+        border-left: 5px solid #333;
+        margin-bottom: 20px;
+        font-size: 0.9rem;
     }
+    .ilmo-highlight { color: #ffaa00; font-weight: bold; }
+    .footer { position: fixed; left: 0; bottom: 0; width: 100%; color: #444; text-align: center; font-size: 10px; padding: 10px; }
+    div[data-testid="stButton"] { margin-top: 28px !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -47,11 +52,12 @@ REKKARIT = [f"OH-LK{l}" for l in REKKARIT_RAAKA]
 IATA_HEL = "HEL"
 YOPYVAT_KOHTEET = ["ARN", "BRU", "CDG", "CPH", "GOT", "RVN", "TLL"]
 
-# Alustetaan session_state tuloksille
 if 'loydetyt' not in st.session_state:
     st.session_state.loydetyt = []
 if 'ohitetut' not in st.session_state:
     st.session_state.ohitetut = []
+if 'viimeisin_data' not in st.session_state:
+    st.session_state.viimeisin_data = None
 if 'haettu' not in st.session_state:
     st.session_state.haettu = False
 
@@ -75,6 +81,7 @@ with col_ui[3]:
 if tyhjenna:
     st.session_state.loydetyt = []
     st.session_state.ohitetut = []
+    st.session_state.viimeisin_data = None
     st.session_state.haettu = False
     st.rerun()
 
@@ -83,7 +90,7 @@ paivystys_loppu_dt = datetime.combine(nykyhetki_paikallinen.date(), paattymisaik
 
 if tarkista:
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept": "application/json",
         "Referer": "https://www.flightradar24.com/"
     }
@@ -93,9 +100,15 @@ if tarkista:
         dep_res = requests.get(f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=departures&plugin-setting[schedule][timestamp]={ts}", headers=headers, timeout=15)
         arr_res = requests.get(f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=arrivals&plugin-setting[schedule][timestamp]={ts}", headers=headers, timeout=15)
         
-        if dep_res.status_code == 200 and arr_res.status_code == 200:
+        if dep_res.status_code == 200:
             departures = dep_res.json().get('result', {}).get('response', {}).get('airport', {}).get('pluginData', {}).get('schedule', {}).get('departures', {}).get('data', [])
             arrivals = arr_res.json().get('result', {}).get('response', {}).get('airport', {}).get('pluginData', {}).get('schedule', {}).get('arrivals', {}).get('data', [])
+
+            if departures:
+                last_f = departures[-1].get('flight', {})
+                last_ts = last_f.get('time', {}).get('scheduled', {}).get('departure')
+                if last_ts:
+                    st.session_state.viimeisin_data = datetime.fromtimestamp(last_ts, tz=timezone.utc).astimezone(LOCAL_TZ).strftime('%H:%M')
 
             temp_loydetyt = []
             temp_ohitetut = []
@@ -137,29 +150,30 @@ if tarkista:
                         else:
                             temp_loydetyt.append(info)
                     else:
-                        info["syy"] = "Ikkunan ulkopuolella"
+                        info["syy"] = "Päivystyksen jälkeinen" if ilmo_dt_lt > paivystys_loppu_dt else "Menneet"
                         temp_ohitetut.append(info)
 
             st.session_state.loydetyt = temp_loydetyt
             st.session_state.ohitetut = temp_ohitetut
             st.session_state.haettu = True
-        else:
-            st.error("Haku epäonnistui (rajapintavirhe).")
 
     except Exception as e:
-        st.error("Tekninen häiriö haussa.")
+        st.error("Tekninen häiriö.")
 
-# Tulosten näyttäminen
+# --- TULOSTUS ---
 if st.session_state.haettu:
+    if st.session_state.viimeisin_data:
+        st.markdown(f'<div class="status-box">🔍 <b>Datan kattavuus:</b> Lähtöjä klo <b>{st.session_state.viimeisin_data}</b> asti.</div>', unsafe_allow_html=True)
+
     if st.session_state.loydetyt:
         for k in sorted(st.session_state.loydetyt, key=lambda x: x['ilmo']):
             c1, c2, c3 = st.columns([1, 2.5, 2.5])
-            with c1:
-                st.markdown(f"### {k['reg']}")
+            with c1: st.markdown(f"### {k['reg']}")
             with c2:
                 paluu_str = k['paluu'].strftime('%H:%M') if k['paluu'] else ("🌙 Yöpyvä" if k['yopyva'] else "—")
                 st.markdown(f"**{k['lento']}** ➡️ **{k['kohde']}**")
                 st.markdown(f"<span class='info-label'>Lähtö:</span> **{k['lahto'].strftime('%H:%M')}** | <span class='info-label'>Paluu:</span> **{paluu_str}**", unsafe_allow_html=True)
+                st.markdown(f"<span class='info-label'>Ilmoittautuminen (LT):</span> <span class='ilmo-highlight'>{k['ilmo'].strftime('%H:%M')}</span>", unsafe_allow_html=True)
             with c3:
                 color = "#00ff00" if k['soitto_min'] > 30 else "#ff4b4b"
                 st.markdown(f"<div style='text-align:right;'><span style='color:{color}; font-size: 0.8rem;'>Soittoaikaa:</span><br><b style='font-size: 1.4rem; color:{color};'>{k['soitto_min']} min</b></div>", unsafe_allow_html=True)
