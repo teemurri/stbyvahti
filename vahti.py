@@ -41,8 +41,6 @@ st.markdown("""
 REKKARIT_RAAKA = "EFGHIKLMNOPR"
 REKKARIT = [f"OH-LK{l}" for l in REKKARIT_RAAKA]
 IATA_HEL = "HEL"
-
-# MÄÄRITELTY YÖPYVIEN LISTA
 YOPYVAT_KOHTEET = ["ARN", "BRU", "CDG", "CPH", "GOT", "RVN", "TLL"]
 
 # --- OTSAKKEET ---
@@ -64,10 +62,7 @@ nykyhetki_paikallinen = datetime.now(LOCAL_TZ)
 paivystys_loppu_dt = datetime.combine(nykyhetki_paikallinen.date(), paattymisaika).replace(tzinfo=LOCAL_TZ)
 
 if tarkista:
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "application/json"
-    }
+    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
     ts = int(time.time())
 
     try:
@@ -93,7 +88,6 @@ if tarkista:
                 min_lahtoon = int((lahto_dt_lt - nykyhetki_paikallinen).total_seconds() / 60)
                 kohde = f.get('airport', {}).get('destination', {}).get('code', {}).get('iata', '???')
                 
-                # Paluulennon etsintä (12h ikkuna)
                 paluu_aika_lt = None
                 for arr_item in arrivals:
                     af = arr_item.get('flight', {})
@@ -103,12 +97,9 @@ if tarkista:
                             paluu_aika_lt = datetime.fromtimestamp(arr_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                             break
                 
-                # YÖPYVÄN TUNNISTUS
-                # Triggeri: Kohde on listalla JA lähtö klo 20:00 tai myöhemmin
                 on_yopyva = False
-                if paluu_aika_lt is None:
-                    if kohde in YOPYVAT_KOHTEET and lahto_dt_lt.hour >= 20:
-                        on_yopyva = True
+                if paluu_aika_lt is None and kohde in YOPYVAT_KOHTEET and lahto_dt_lt.hour >= 20:
+                    on_yopyva = True
                 
                 info = {
                     "reg": reg, "lento": f.get('identification', {}).get('number', {}).get('default', '???'), 
@@ -116,15 +107,14 @@ if tarkista:
                     "paluu": paluu_aika_lt, "yopyva": on_yopyva
                 }
 
-                # Suodatus: Näytetään vain jos ilmoittautuminen on ennen päivystyksen loppua
                 if min_lahtoon >= 140 and ilmo_dt_lt <= paivystys_loppu_dt:
                     if paivystys_tyyppi == "1 pv" and info["yopyva"]:
-                        info["syy"] = f"Yöpyvä ({kohde} klo {lahto_dt_lt.strftime('%H:%M')})"
+                        info["syy"] = "Yöpyvä (klo 20+)"
                         ohitetut.append(info)
                     else:
                         loydetyt.append(info)
                 else:
-                    info["syy"] = "Ikkunan ulkopuolella"
+                    info["syy"] = "Ikkunan ulkopuolella / jo mennyt"
                     ohitetut.append(info)
 
         if loydetyt:
@@ -133,13 +123,7 @@ if tarkista:
                 with c1:
                     st.markdown(f"### {k['reg']}")
                 with c2:
-                    if k['paluu']:
-                        paluu_str = k['paluu'].strftime('%H:%M')
-                    elif k['yopyva']:
-                        paluu_str = "🌙 Yöpyvä"
-                    else:
-                        paluu_str = "—" # Päiväkeikka, paluuta ei vielä tutkassa
-                        
+                    paluu_str = k['paluu'].strftime('%H:%M') if k['paluu'] else ("🌙 Yöpyvä" if k['yopyva'] else "—")
                     st.markdown(f"**{k['lento']}** ➡️ **{k['kohde']}**")
                     st.markdown(f"<span class='info-label'>Lähtö:</span> **{k['lahto'].strftime('%H:%M')}** | <span class='info-label'>Paluu:</span> **{paluu_str}**", unsafe_allow_html=True)
                 with c3:
@@ -149,7 +133,13 @@ if tarkista:
         else:
             st.info("Ei aktiivisia keikkoja.")
 
+        # --- HYLÄTYT LISTA ALAS ---
+        if ohitetut:
+            with st.expander("Muut havainnot (Hylätyt/Ohitetut)"):
+                for o in sorted(ohitetut, key=lambda x: x['lahto']):
+                    st.caption(f"{o['lahto'].strftime('%H:%M')} | {o['reg']} | {o['lento']} ➡️ {o['kohde']} | Syy: {o['syy']}")
+
     except Exception as e:
-        st.error("Haku epäonnistui. Tarkista yhteys.")
+        st.error("Haku epäonnistui.")
 
 st.markdown('<div class="footer">Emppukuskin työkalu</div>', unsafe_allow_html=True)
