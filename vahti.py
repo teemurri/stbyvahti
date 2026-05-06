@@ -41,6 +41,7 @@ st.markdown("""
 REKKARIT_RAAKA = "EFGHIKLMNOPR"
 REKKARIT = [f"OH-LK{l}" for l in REKKARIT_RAAKA]
 IATA_HEL = "HEL"
+# Käyttäjän antama lista yöpyvistä kohteista
 YOPYVAT_KOHTEET = ["ARN", "BRU", "CDG", "CPH", "GOT", "RVN", "TLL"]
 
 # --- OTSAKKEET ---
@@ -62,13 +63,27 @@ nykyhetki_paikallinen = datetime.now(LOCAL_TZ)
 paivystys_loppu_dt = datetime.combine(nykyhetki_paikallinen.date(), paattymisaika).replace(tzinfo=LOCAL_TZ)
 
 if tarkista:
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+    # Vahvistetut headerit, jotta haku ei epäonnistu
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.flightradar24.com/"
+    }
     ts = int(time.time())
 
     try:
-        dep_res = requests.get(f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=departures&plugin-setting[schedule][timestamp]={ts}", headers=headers, timeout=15)
-        arr_res = requests.get(f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=arrivals&plugin-setting[schedule][timestamp]={ts}", headers=headers, timeout=15)
+        # Haut
+        dep_url = f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=departures&plugin-setting[schedule][timestamp]={ts}"
+        arr_url = f"https://api.flightradar24.com/common/v1/airport.json?code={IATA_HEL}&plugin[]=&plugin-setting[schedule][mode]=arrivals&plugin-setting[schedule][timestamp]={ts}"
         
+        dep_res = requests.get(dep_url, headers=headers, timeout=15)
+        arr_res = requests.get(arr_url, headers=headers, timeout=15)
+        
+        if dep_res.status_code != 200 or arr_res.status_code != 200:
+            st.error(f"Rajapintavirhe (Status: {dep_res.status_code}). Yritä hetken kuluttua uudelleen.")
+            st.stop()
+
         departures = dep_res.json().get('result', {}).get('response', {}).get('airport', {}).get('pluginData', {}).get('schedule', {}).get('departures', {}).get('data', [])
         arrivals = arr_res.json().get('result', {}).get('response', {}).get('airport', {}).get('pluginData', {}).get('schedule', {}).get('arrivals', {}).get('data', [])
 
@@ -88,6 +103,7 @@ if tarkista:
                 min_lahtoon = int((lahto_dt_lt - nykyhetki_paikallinen).total_seconds() / 60)
                 kohde = f.get('airport', {}).get('destination', {}).get('code', {}).get('iata', '???')
                 
+                # Paluulennon haku
                 paluu_aika_lt = None
                 for arr_item in arrivals:
                     af = arr_item.get('flight', {})
@@ -97,26 +113,37 @@ if tarkista:
                             paluu_aika_lt = datetime.fromtimestamp(arr_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                             break
                 
+                # Yöpyvä-logiikka: Lista + Klo 20:00 raja
                 on_yopyva = False
                 if paluu_aika_lt is None and kohde in YOPYVAT_KOHTEET and lahto_dt_lt.hour >= 20:
                     on_yopyva = True
                 
                 info = {
-                    "reg": reg, "lento": f.get('identification', {}).get('number', {}).get('default', '???'), 
-                    "kohde": kohde, "lahto": lahto_dt_lt, "ilmo": ilmo_dt_lt, "soitto_min": min_lahtoon - 140, 
-                    "paluu": paluu_aika_lt, "yopyva": on_yopyva
+                    "reg": reg, 
+                    "lento": f.get('identification', {}).get('number', {}).get('default', '???'), 
+                    "kohde": kohde, 
+                    "lahto": lahto_dt_lt, 
+                    "ilmo": ilmo_dt_lt, 
+                    "soitto_min": min_lahtoon - 140, 
+                    "paluu": paluu_aika_lt, 
+                    "yopyva": on_yopyva,
+                    "syy": "" 
                 }
 
-                if min_lahtoon >= 140 and ilmo_dt_lt <= paivystys_loppu_dt:
-                    if paivystys_tyyppi == "1 pv" and info["yopyva"]:
-                        info["syy"] = "Yöpyvä (klo 20+)"
-                        ohitetut.append(info)
-                    else:
-                        loydetyt.append(info)
-                else:
-                    info["syy"] = "Ikkunan ulkopuolella / jo mennyt"
+                # Suodatusehdot
+                if min_lahtoon < 140:
+                    info["syy"] = "Lento meni jo tai ilmoittautuminen ohi"
                     ohitetut.append(info)
+                elif ilmo_dt_lt > paivystys_loppu_dt:
+                    info["syy"] = "Ilmoittautuminen päivystyksen jälkeen"
+                    ohitetut.append(info)
+                elif paivystys_tyyppi == "1 pv" and on_yopyva:
+                    info["syy"] = "Yöpyvä (klo 20+ sääntö)"
+                    ohitetut.append(info)
+                else:
+                    loydetyt.append(info)
 
+        # TULOSTUS
         if loydetyt:
             for k in sorted(loydetyt, key=lambda x: x['ilmo']):
                 c1, c2, c3 = st.columns([1, 2.5, 2.5])
@@ -131,15 +158,15 @@ if tarkista:
                     st.markdown(f"<div style='text-align:right;'><span style='color:{color}; font-size: 0.8rem;'>Soittoaikaa:</span><br><b style='font-size: 1.4rem; color:{color};'>{k['soitto_min']} min</b></div>", unsafe_allow_html=True)
                 st.divider()
         else:
-            st.info("Ei aktiivisia keikkoja.")
+            st.info("Ei aktiivisia keikkoja päivystyksen puitteissa.")
 
-        # --- HYLÄTYT LISTA ALAS ---
+        # HYLÄTYT
         if ohitetut:
             with st.expander("Muut havainnot (Hylätyt/Ohitetut)"):
                 for o in sorted(ohitetut, key=lambda x: x['lahto']):
                     st.caption(f"{o['lahto'].strftime('%H:%M')} | {o['reg']} | {o['lento']} ➡️ {o['kohde']} | Syy: {o['syy']}")
 
     except Exception as e:
-        st.error("Haku epäonnistui.")
+        st.error(f"Tekninen häiriö datan käsittelyssä. Yritä uudelleen.")
 
 st.markdown('<div class="footer">Emppukuskin työkalu</div>', unsafe_allow_html=True)
