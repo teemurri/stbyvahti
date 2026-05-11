@@ -41,6 +41,7 @@ st.markdown("""
         font-size: 0.9rem;
     }
     .ilmo-highlight { color: #ffaa00; font-weight: bold; }
+    .soitto-kello { font-size: 0.85rem; color: #888; font-weight: normal; }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; color: #444; text-align: center; font-size: 10px; padding: 10px; }
     div[data-testid="stButton"] { margin-top: 28px !important; }
     </style>
@@ -51,6 +52,7 @@ REKKARIT_RAAKA = "EFGHIKLMNOPR"
 REKKARIT = [f"OH-LK{l}" for l in REKKARIT_RAAKA]
 IATA_HEL = "HEL"
 YOPYVAT_KOHTEET = ["ARN", "BRU", "CDG", "CPH", "GOT", "RVN", "TLL"]
+KELLO_VAIHTOEHDOT = [f"{h:02d}:00" for h in range(6, 25)]
 
 if 'loydetyt' not in st.session_state:
     st.session_state.loydetyt = []
@@ -65,17 +67,14 @@ if 'haettu' not in st.session_state:
 st.markdown('<p class="main-title">Emppukuskin päivystysvahti ✈️</p>', unsafe_allow_html=True)
 
 # --- SYÖTTEET ---
-col_ui = st.columns([1.2, 1.0, 0.8, 0.8])
+col_ui = st.columns([1.5, 1.0, 1.0])
 
 with col_ui[0]:
-    st.markdown('<p class="label-text">Päivystyksen pituus</p>', unsafe_allow_html=True)
-    paivystys_tyyppi = st.selectbox("Pituus", ["1 pv", "2 pv"], label_visibility="collapsed")
-with col_ui[1]:
     st.markdown('<p class="label-text">Päivystys päättyy (LT)</p>', unsafe_allow_html=True)
-    paattymisaika = st.time_input("Päättyy", value=datetime.strptime("20:00", "%H:%M").time(), label_visibility="collapsed")
-with col_ui[2]:
+    paattymisaika_str = st.selectbox("Päättyy", KELLO_VAIHTOEHDOT, index=14, label_visibility="collapsed") # Default 20:00
+with col_ui[1]:
     tarkista = st.button('HAE LENTOJA 🔍', use_container_width=True, type="primary")
-with col_ui[3]:
+with col_ui[2]:
     tyhjenna = st.button('TYHJENNÄ 🗑️', use_container_width=True)
 
 if tyhjenna:
@@ -86,7 +85,11 @@ if tyhjenna:
     st.rerun()
 
 nykyhetki_paikallinen = datetime.now(LOCAL_TZ)
-paivystys_loppu_dt = datetime.combine(nykyhetki_paikallinen.date(), paattymisaika).replace(tzinfo=LOCAL_TZ)
+valittu_tunti = int(paattymisaika_str.split(':')[0])
+if valittu_tunti == 24:
+    paivystys_loppu_dt = datetime.combine(nykyhetki_paikallinen.date(), datetime.min.time()).replace(tzinfo=LOCAL_TZ) + timedelta(days=1)
+else:
+    paivystys_loppu_dt = datetime.combine(nykyhetki_paikallinen.date(), datetime.strptime(paattymisaika_str, "%H:%M").time()).replace(tzinfo=LOCAL_TZ)
 
 if tarkista:
     headers = {
@@ -123,6 +126,7 @@ if tarkista:
                     
                     lahto_dt_lt = datetime.fromtimestamp(dep_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                     ilmo_dt_lt = lahto_dt_lt - timedelta(minutes=50)
+                    soitto_raja_dt = lahto_dt_lt - timedelta(minutes=140)
                     min_lahtoon = int((lahto_dt_lt - nykyhetki_paikallinen).total_seconds() / 60)
                     kohde = f.get('airport', {}).get('destination', {}).get('code', {}).get('iata', '???')
                     
@@ -135,16 +139,17 @@ if tarkista:
                                 paluu_aika_lt = datetime.fromtimestamp(arr_ts, tz=timezone.utc).astimezone(LOCAL_TZ)
                                 break
                     
+                    # Jos paluu puuttuu ja lähtö on klo 20 tai myöhemmin, tulkitaan yöpyväksi
                     on_yopyva = (paluu_aika_lt is None and kohde in YOPYVAT_KOHTEET and lahto_dt_lt.hour >= 20)
                     
                     info = {
                         "reg": reg, "lento": f.get('identification', {}).get('number', {}).get('default', '???'), 
-                        "kohde": kohde, "lahto": lahto_dt_lt, "ilmo": ilmo_dt_lt, "soitto_min": min_lahtoon - 140, 
-                        "paluu": paluu_aika_lt, "yopyva": on_yopyva
+                        "kohde": kohde, "lahto": lahto_dt_lt, "ilmo": ilmo_dt_lt, "soitto_kello": soitto_raja_dt,
+                        "soitto_min": min_lahtoon - 140, "paluu": paluu_aika_lt, "yopyva": on_yopyva
                     }
 
                     if min_lahtoon >= 140 and ilmo_dt_lt <= paivystys_loppu_dt:
-                        if paivystys_tyyppi == "1 pv" and on_yopyva:
+                        if on_yopyva:
                             info["syy"] = "Yöpyvä (klo 20+)"
                             temp_ohitetut.append(info)
                         else:
@@ -157,7 +162,7 @@ if tarkista:
             st.session_state.ohitetut = temp_ohitetut
             st.session_state.haettu = True
 
-    except Exception as e:
+    except Exception:
         st.error("Tekninen häiriö.")
 
 # --- TULOSTUS ---
@@ -176,7 +181,13 @@ if st.session_state.haettu:
                 st.markdown(f"<span class='info-label'>Ilmoittautuminen (LT):</span> <span class='ilmo-highlight'>{k['ilmo'].strftime('%H:%M')}</span>", unsafe_allow_html=True)
             with c3:
                 color = "#00ff00" if k['soitto_min'] > 30 else "#ff4b4b"
-                st.markdown(f"<div style='text-align:right;'><span style='color:{color}; font-size: 0.8rem;'>Soittoaikaa:</span><br><b style='font-size: 1.4rem; color:{color};'>{k['soitto_min']} min</b></div>", unsafe_allow_html=True)
+                st.markdown(f"""
+                    <div style='text-align:right;'>
+                        <span style='color:{color}; font-size: 0.8rem;'>Soittoaikaa:</span><br>
+                        <b style='font-size: 1.4rem; color:{color};'>{k['soitto_min']} min</b><br>
+                        <span class='soitto-kello'>(viim. klo {k['soitto_kello'].strftime('%H:%M')})</span>
+                    </div>
+                """, unsafe_allow_html=True)
             st.divider()
     else:
         st.info("Ei aktiivisia keikkoja.")
